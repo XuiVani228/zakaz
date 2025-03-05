@@ -20,12 +20,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Ваши токены и ID
 TELEGRAM_BOT_TOKEN = '1986934859:AAHDsdXTstuqx0_UIfV2WA2DhDpxnqfAnqI'
 YOUTUBE_API_KEY = "AIzaSyBFihspeJNsQzISoi_ILVKS9TekMhz1oKw"
-VK_TOKEN = "vk1.a.jL1RsG14mjaojmhxjWVf_ALu8H8Vfl-KXymyR9WyPVIBgv87DSPGlILH4bC3H87k6NfELERho6ZabJI22T4cr2S5g4UeEavr2zCNykzZI4ATO15t8nDdGkx7xnJd_hKKeccN95DvzXe1sRmBXnoENmlu6HVbKh5cdYIzQMl25OS7iexjJXgm7Bcz0FlZQYCb3Kwr_LuFZMbYQnfkGnzkwQ"  # Замените на ваш токен
+VK_TOKEN = "vk1.a.QShLn-EByss3IKu1g2LjHMRaTujAUfXqv6leERA547PJ2eDk6a0yAq4BqBfTTWExtDa-y7YXT64uJzsm9QE_0sGoa_BRXTuMPwIzILXEmVFO0GRuMDCpwnWvjVCN_md7Llz1ZxLK-GBz5WvVw7aPdMAPvpIUH_Mq2A3aYV0O7_un1Voxf-IiySScHIaT7FwW1OsFcz7KbRiY_dFb2H0IVA"  # Замените на ваш токен
 VK_GROUP_ID = "204428788"
 DOWNLOAD_FOLDER = 'C:\\Users\\dadyo\\Videos\\Captures'
-PREVIEW_FOLDER = os.path.join(DOWNLOAD_FOLDER, 'previews')
 UPLOADED_FOLDER = os.path.join(DOWNLOAD_FOLDER, 'uploaded')
-CHECK_INTERVAL = 60 * 60  # Интервал проверки каналов (24 часа)
+CHECK_INTERVAL = 24 * 60 * 60  # Интервал проверки каналов (24 часа)
 
 # Пути
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -34,8 +33,6 @@ CHANNELS_FILE = os.path.join(SCRIPT_DIR, 'channels.json')
 # Создание папок
 if not os.path.exists(DOWNLOAD_FOLDER):
     os.makedirs(DOWNLOAD_FOLDER)
-if not os.path.exists(PREVIEW_FOLDER):
-    os.makedirs(PREVIEW_FOLDER)
 if not os.path.exists(UPLOADED_FOLDER):
     os.makedirs(UPLOADED_FOLDER)
 
@@ -50,7 +47,7 @@ ydl_opts = {
     'merge_output_format': 'mp4',  # Сохраняем в MP4
     'noplaylist': True,
     'nocheckcertificate': True,
-    'retries': 10000000000000000000,
+    'retries': 10,
     'quiet': False,
     'playlistend': 1,
     'http_headers': {
@@ -71,136 +68,6 @@ def save_metadata_to_file(video_path, title, description, tags):
     except Exception as e:
         logging.error(f"Ошибка сохранения метаданных: {e}")
         return None
-
-# Функция для получения превью по ссылке
-def get_preview_from_url(video_url):
-    try:
-        video_id = video_url.split("watch?v=")[1]
-        request = youtube.videos().list(part="snippet", id=video_id).execute()
-        if request["items"]:
-            thumbnail_url = request["items"][0]["snippet"]["thumbnails"]["maxres"]["url"]
-            return thumbnail_url
-        else:
-            return None
-    except Exception as e:
-        logging.error(f"Ошибка получения ссылки на превью: {e}")
-        return None
-
-# Функция для загрузки превью и возврата пути
-def download_preview(video_url):
-    try:
-        thumbnail_url = get_preview_from_url(video_url)
-        if thumbnail_url:
-            video_id = video_url.split("watch?v=")[1]
-            preview_path = os.path.join(PREVIEW_FOLDER, f"{video_id}.jpg")
-            response = requests.get(thumbnail_url)
-            if response.status_code == 200:
-                with open(preview_path, "wb") as f:
-                    f.write(response.content)
-                logging.info(f"Превью скачано: {preview_path}")
-                return preview_path
-            else:
-                logging.error(f"Ошибка при скачивании превью: {response.status_code}")
-                return None
-        else:
-            logging.warning("Не удалось получить ссылку на превью.")
-            return None
-    except Exception as e:
-        logging.error(f"Ошибка при скачивании превью: {e}")
-        return None
-
-# Функция получения метаданных видео
-def get_video_metadata(video_path):
-    try:
-        if video_path.startswith('http'):
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info_dict = ydl.extract_info(video_path, download=False)
-            title = info_dict.get('title', os.path.basename(video_path))
-            description = info_dict.get('description', "Описание отсутствует")
-            tags = info_dict.get('tags', ["Теги отсутствуют"])
-            return title, description, tags
-        else:
-            title = os.path.basename(video_path)
-            description = "Описание отсутствует"
-            tags = ["Теги отсутствуют"]
-            return title, description, tags
-    except Exception as e:
-        logging.error(f"Ошибка при получении метаданных: {e}")
-        return os.path.basename(video_path), "Описание отсутствует", ["Теги отсутствуют"]
-
-# Функция загрузки видео в VK с использованием последнего превью
-def upload_video_to_vk(video_path, metadata_file=None):
-    max_retries = 5
-    retry_delay = 5
-
-    for attempt in range(max_retries):
-        try:
-            logging.info(f"Начинаю загрузку '{video_path}' в VK, попытка {attempt + 1}")
-
-            upload_session = VkApi(token=VK_TOKEN)
-            upload = VkUpload(upload_session)
-            logging.info(f"Сессия VK API создана.")
-
-            title, description, tags = None, None, None
-
-            # Загрузка метаданных из файла
-            if metadata_file and os.path.exists(metadata_file):
-                try:
-                    with open(metadata_file, "r", encoding="utf-8") as f:
-                        metadata = json.load(f)
-                    title = metadata.get("title", os.path.splitext(os.path.basename(video_path))[0])
-                    description = metadata.get("description", "Описание отсутствует")
-                    tags = metadata.get("tags", ["Теги отсутствуют"])
-                    logging.info(f"Метаданные загружены из файла: {metadata_file}")
-                except Exception as e:
-                    logging.error(f"Ошибка чтения файла метаданных: {e}")
-
-            # Получение метаданных, если не были загружены из файла
-            if not title or not description or not tags:
-                title, description, tags = get_video_metadata(video_path)
-
-            # Последнее скачанное превью
-            preview_files = [f for f in os.listdir(PREVIEW_FOLDER) if f.endswith('.jpg')]
-            if preview_files:
-                preview_path = os.path.join(PREVIEW_FOLDER, max(preview_files, key=lambda x: os.path.getctime(os.path.join(PREVIEW_FOLDER, x))))
-                logging.info(f"Использую превью: {preview_path}")
-
-                try:
-                    with open(preview_path, 'rb') as image_file:
-                        logging.info("Превью открыто для чтения.")
-                        photo = upload.photo_video(image_file, group_id=VK_GROUP_ID)
-                        logging.info("Превью загружено в VK.")
-                        photo_id = f"photo{photo[0]['owner_id']}_{photo[0]['id']}"
-                        logging.info(f"Превью загружено, ID: {photo_id}")
-                        response = upload.video(video_file=video_path, group_id=VK_GROUP_ID, name=title, description=description, cover_id=photo_id)
-
-                        # Удаление превью после использования
-                        os.remove(preview_path)
-                        logging.info(f"Превью удалено: {preview_path}")
-
-                        logging.info(f"Видео с превью '{title}' успешно загружено.")
-                except Exception as e:
-                    logging.error(f"Ошибка загрузки превью: {e}")
-                    response = upload.video(video_file=video_path, group_id=VK_GROUP_ID, name=title, description=description)
-                    logging.info(f"Видео без превью '{title}' успешно загружено.")
-            else:
-                logging.info("Нет превью для загрузки.")
-                response = upload.video(video_file=video_path, group_id=VK_GROUP_ID, name=title, description=description)
-                logging.info(f"Видео без превью '{title}' успешно загружено.")
-
-            video_link = f"https://vk.com/video-{VK_GROUP_ID}_{response['video_id']}"
-            logging.info(f"Видео '{title}' загружено: {video_link}")
-            return True
-
-        except Exception as e:
-            logging.error(f"Ошибка загрузки '{video_path}', попытка {attempt + 1}: {e}")
-            if attempt == max_retries - 1:
-                logging.error(f"Не удалось загрузить '{video_path}'.")
-                return False
-
-            time.sleep(retry_delay)
-
-    return False
 
 # Функция для получения ID канала по имени пользователя (@username)
 def get_channel_id(username):
@@ -240,7 +107,7 @@ def get_latest_video(channel_id):
             current_time = datetime.utcnow()
 
             # Проверяем, что видео опубликовано за последние 24 часа
-            if current_time - publish_time_dt <= timedelta(days=36500):
+            if current_time - publish_time_dt <= timedelta(days=36500):  # Практически "всегда"
                 return f"https://www.youtube.com/watch?v={video_id}"
             else:
                 return None
@@ -249,6 +116,22 @@ def get_latest_video(channel_id):
     except Exception as e:
         logging.error(f"Ошибка при получении последнего видео: {e}")
         return None
+
+# Функция для обработки списка каналов
+def process_channels():
+    try:
+        if not os.path.exists(CHANNELS_FILE):
+            with open(CHANNELS_FILE, 'w', encoding='utf-8') as f:
+                json.dump([], f)
+            logging.info(f"Файл {CHANNELS_FILE} не найден, был создан пустой файл.")
+        with open(CHANNELS_FILE, 'r', encoding='utf-8') as f:
+            channels = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logging.error(f"Ошибка при чтении файла каналов: {e}")
+        return
+
+    for channel in channels:
+        download_latest_youtube_video(channel['channel_url'])
 
 # Функция для скачивания последнего видео с YouTube канала
 def download_latest_youtube_video(channel_url):
@@ -270,12 +153,10 @@ def download_latest_youtube_video(channel_url):
                     description = info.get('description', 'Описание отсутствует')
                     tags = info.get('tags', [])
 
-                    # Получаем превью и сохраняем его
-                    preview_path = download_preview(latest_video_url)
-
                     # Сохраняем метаданные
                     metadata_file = save_metadata_to_file(file_path, video_title, description, tags)
 
+                    # Загружаем видео в VK (без превью)
                     if upload_video_to_vk(file_path, metadata_file):
                         logging.info(f"Видео канала {channel_url} успешно загружено")
                     else:
@@ -297,22 +178,6 @@ def download_latest_youtube_video(channel_url):
             os.remove(metadata_file)
             logging.info(f"Файл метаданных '{metadata_file}' удален.")
 
-# Функция для обработки списка каналов
-def process_channels():
-    try:
-        if not os.path.exists(CHANNELS_FILE):
-            with open(CHANNELS_FILE, 'w', encoding='utf-8') as f:
-                json.dump([], f)
-            logging.info(f"Файл {CHANNELS_FILE} не найден, был создан пустой файл.")
-        with open(CHANNELS_FILE, 'r', encoding='utf-8') as f:
-            channels = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        logging.error(f"Ошибка при чтении файла каналов: {e}")
-        return
-
-    for channel in channels:
-        download_latest_youtube_video(channel['channel_url'])
-
 # Функция для сканирования папки и загрузки новых видео
 def process_video_folder():
     logging.info("Начинаю проверку папки на наличие новых видео.")
@@ -329,7 +194,8 @@ def process_video_folder():
                     video_path = os.path.join(DOWNLOAD_FOLDER, video_file)
                     metadata_file = os.path.splitext(video_path)[0] + ".txt"  # Предполагаемое имя файла метаданных
 
-                    if upload_video_to_vk(video_path, metadata_file):  # Передаем metadata_file
+                    # Загружаем видео в VK (без превью)
+                    if upload_video_to_vk(video_path, metadata_file):
                         uploaded_files.add(video_file)
                         time.sleep(10)  # Даем время освободить файл
 
@@ -350,6 +216,58 @@ def process_video_folder():
         except Exception as e:
             logging.error(f"Ошибка при обработке папки: {e}")
         time.sleep(60 * 1)  # Задержка 1 минута
+
+# Функция загрузки видео в VK (без превью)
+def upload_video_to_vk(video_path, metadata_file=None):
+    max_retries = 3
+    retry_delay = 5
+
+    for attempt in range(max_retries):
+        try:
+            logging.info(f"Начинаю загрузку '{video_path}' в VK, попытка {attempt + 1}")
+
+            upload_session = VkApi(token=VK_TOKEN)
+            upload = VkUpload(upload_session)
+            logging.info(f"Сессия VK API создана.")
+
+            title, description, tags = None, None, None
+
+            # Загрузка метаданных из файла
+            if metadata_file and os.path.exists(metadata_file):
+                try:
+                    with open(metadata_file, "r", encoding="utf-8") as f:
+                        metadata = json.load(f)
+                    title = metadata.get("title", os.path.splitext(os.path.basename(video_path))[0])
+                    description = metadata.get("description", "Описание отсутствует")
+                    tags = metadata.get("tags", ["Теги отсутствуют"])
+                    logging.info(f"Метаданные загружены из файла: {metadata_file}")
+                except Exception as e:
+                    logging.error(f"Ошибка чтения файла метаданных: {e}")
+
+            # Получение метаданных, если не были загружены из файла
+            if not title or not description or not tags:
+                title, description, tags = get_video_metadata(video_path)
+
+            try:
+                response = upload.video(video_file=video_path, group_id=VK_GROUP_ID, name=title, description=description)
+                logging.info(f"Видео '{title}' успешно загружено.")
+            except Exception as e:
+                logging.error(f"Ошибка загрузки видео: {e}")
+                return False
+
+            video_link = f"https://vk.com/video-{VK_GROUP_ID}_{response['video_id']}"
+            logging.info(f"Видео '{title}' загружено: {video_link}")
+            return True
+
+        except Exception as e:
+            logging.error(f"Ошибка загрузки '{video_path}', попытка {attempt + 1}: {e}")
+            if attempt == max_retries - 1:
+                logging.error(f"Не удалось загрузить '{video_path}'.")
+                return False
+
+            time.sleep(retry_delay)
+
+    return False
 
 # Функция для планирования проверки каналов
 def schedule_channels_check():
@@ -450,9 +368,6 @@ def download_video(message: Message):
             description = info.get('description', 'Описание отсутствует')
             tags = info.get('tags', [])
 
-            # Скачиваем превью
-            preview_path = download_preview(url)
-
             # Сохраняем метаданные
             metadata_file = save_metadata_to_file(file_path, video_title, description, tags)
 
@@ -475,6 +390,12 @@ def download_video(message: Message):
         if metadata_file and os.path.exists(metadata_file):
             os.remove(metadata_file)
             logging.info(f"Файл метаданных '{metadata_file}' удален.")
+
+# Функция для планирования проверки каналов
+def schedule_channels_check():
+    threading.Timer(CHECK_INTERVAL, schedule_channels_check).start()  # Запускаем таймер снова
+    logging.info("Запланирована проверка каналов...")
+    process_channels()  # Вызов process_channels
 
 # Обработка текста
 @bot.message_handler(func=lambda message: True)
